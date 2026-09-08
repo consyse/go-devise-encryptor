@@ -1,0 +1,2 @@
+# Fuzzing writes new corpus entries here; they are machine output, not source.
+/testdata/fuzz/

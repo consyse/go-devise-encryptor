@@ -1,0 +1,103 @@
+{
+  "generated_by": "ruby 3.4.9 / bcrypt 3.1.20",
+  "fixtures": [
+    {
+      "name": "simple_with_pepper",
+      "password": "changeme",
+      "pepper": "a bad pepper",
+      "stretches": 4,
+      "hash": "$2a$04$ENV1618Dyvo9HwSnIk51OO819UHOFWtoobQ4oTn5xQUgZWoXpyPKq"
+    },
+    {
+      "name": "simple_no_pepper",
+      "password": "changeme",
+      "pepper": "",
+      "stretches": 4,
+      "hash": "$2a$04$UdwrQwIk8CA0vOBbmUX/ZOkIk.T.QUEZ6GwGhj.OlLNfIvosoSiwe"
+    },
+    {
+      "name": "empty_password",
+      "password": "",
+      "pepper": "a bad pepper",
+      "stretches": 4,
+      "hash": "$2a$04$nLBlnSc7Yb3Tb5qt3HKTHOmM7VY1.z2Mh8S/gbQxxz9qYZ11QXf2."
+    },
+    {
+      "name": "empty_everything",
+      "password": "",
+      "pepper": "",
+      "stretches": 4,
+      "hash": "$2a$04$eU7XGBGHkc5ImLCw./dCEue8JRyqok/x7bZh0P9qhz1Y8Jw4nDBmO"
+    },
+    {
+      "name": "unicode",
+      "password": "pässwörd✓🔐",
+      "pepper": "pépper",
+      "stretches": 4,
+      "hash": "$2a$04$KeBMPXPKCmqmcENDEIUpFeSy6qXiSD8D0Yqtz4di4PMZ7IUtFRxRG"
+    },
+    {
+      "name": "whitespace_pepper",
+      "password": "changeme",
+      "pepper": "   ",
+      "stretches": 4,
+      "hash": "$2a$04$/jsfnrcIVJuNuBsE8ecmoew1dyRh2nau31Pu2oxd/37/f80hfDMUy"
+    },
+    {
+      "name": "tab_newline_pepper",
+      "password": "changeme",
+      "pepper": "\t\n",
+      "stretches": 4,
+      "hash": "$2a$04$21vm0IDX1T5y9qg1YC4ZVeIwzTAwgF3NqfV2HC1JOX0hobpisbOEO"
+    },
+    {
+      "name": "exactly_72_bytes",
+      "password": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "pepper": "",
+      "stretches": 4,
+      "hash": "$2a$04$BfBMPNTmhKT24wnF.y6U1eoj6eYVQe.XGqDsJEchkzGap1Aenop9."
+    },
+    {
+      "name": "73_bytes",
+      "password": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "pepper": "",
+      "stretches": 4,
+      "hash": "$2a$04$cSQAcvxfwo5saWybzlOOIu2REAbIR56wC5z3bYJOEFCz8LObAaPy."
+    },
+    {
+      "name": "long_password",
+      "password": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "pepper": "",
+      "stretches": 4,
+      "hash": "$2a$04$3pIJ7vQvz2caMoY2nnMO5.T2NcMA1ZIMtDyXP41oV.dXNEDFnBkXG"
+    },
+    {
+      "name": "pepper_crosses_limit",
+      "password": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "pepper": "cccccccccccccccccccc",
+      "stretches": 4,
+      "hash": "$2a$04$b.6ZB9FYJkTxrXMRhM7Bc.t3b8TRT5S91OntFSApNTX.QBKAo3X26"
+    },
+    {
+      "name": "unicode_split_by_cut",
+      "password": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddé",
+      "pepper": "",
+      "stretches": 4,
+      "hash": "$2a$04$DvBz0tyST5tf70bgRmVByOusIzhkw.MybM2jC9vPKUfjRUdafRNBu"
+    },
+    {
+      "name": "spaces_in_password",
+      "password": "  spaced  ",
+      "pepper": "",
+      "stretches": 4,
+      "hash": "$2a$04$P6iYABFF0FUD1Ebk7MzGz.bxKQ1Q066rzbgmC2XwNhhHC4rZ/NqZu"
+    },
+    {
+      "name": "high_cost",
+      "password": "changeme",
+      "pepper": "",
+      "stretches": 10,
+      "hash": "$2a$10$sLX3.Ps//jr7IuIvYVFAL.aisYWgBEfFYDqhXhG.tQJ3gDjXGTzFC"
+    }
+  ]
+}
