@@ -27,11 +27,6 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
 
-      # Without this, a runner older than go.mod's directive silently
-      # downloads a newer toolchain and every matrix leg tests the same one.
-      - name: Pin the toolchain to the runner
-        run: echo "GOTOOLCHAIN=local" >> "$GITHUB_ENV"
-
       # Ruby + bcrypt are what make the cross-language tests run instead of skip.
       - uses: ruby/setup-ruby@v1
         with:

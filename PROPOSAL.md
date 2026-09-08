@@ -15,8 +15,9 @@ reasoning and the decisions behind the change.
   directive is a hard minimum for anyone importing the package, so 1.26
   locked out 1.24 and 1.25 users for no gain. Pinned to
   `x/crypto v0.48.0`, the newest release that still targets Go 1.24. The
-  CI matrix now sets `GOTOOLCHAIN=local`, without which an older runner
-  silently downloads a newer toolchain and every leg tests the same one.
+  CI matrix needed no toolchain pin: `actions/setup-go` already sets
+  `GOTOOLCHAIN=local`, so a runner older than the `go` directive fails
+  loudly instead of downloading a newer toolchain.
 
 - **2026-09-08 — cost below 10: return an error.** Approved by John
   Bolliger, after a probe found Go and Ruby disagree on every invalid cost.
