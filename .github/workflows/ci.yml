@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (Go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.24", "1.25", "1.26"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+
+      # Ruby + bcrypt are what make the cross-language tests run instead of skip.
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
+      - name: Install bcrypt gem
+        run: gem install bcrypt
+
+      - name: gofmt
+        if: matrix.go == '1.24'
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt clean:"
+            echo "$unformatted"
+            gofmt -d .
+            exit 1
+          fi
+
+      - name: go vet
+        if: matrix.go == '1.24'
+        run: go vet ./...
+
+      - name: go test
+        run: go test -race -cover ./...
+
+      # bcrypt salts are random, so the regenerated file always differs from
+      # the committed one. Comparing files would be noise; re-running the Go
+      # side against fresh Ruby output is what proves we still match Devise.
+      # Only one leg regenerates, so the others still test the committed file.
+      - name: Regenerate fixtures and re-test
+        if: matrix.go == '1.24'
+        run: |
+          ruby script/generate_fixtures.rb
+          go test -run TestCompareAgainstRubyFixtures -v ./...
+
+  staticcheck:
+    name: staticcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # staticcheck is a tool, not a consumer of this module, and its own
+      # release needs a newer Go than the 1.24 go.mod targets.
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+
+      - uses: dominikh/staticcheck-action@v1
+        with:
+          version: latest
+          # setup-go already picked the toolchain; let the action reuse it.
+          install-go: false
+
+  fuzz:
+    name: Fuzz smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # -run xxx matches no unit test, so only the fuzz target runs. Short
+      # fuzztime keeps this a smoke test, not a fuzzing campaign.
+      - name: Fuzz Digest/Compare round-trip
+        run: go test -run xxx -fuzz FuzzDigestCompare -fuzztime 30s ./...
+
+      - name: Fuzz CompareErr arbitrary hashes
+        run: go test -run xxx -fuzz FuzzCompareErr -fuzztime 30s ./...
