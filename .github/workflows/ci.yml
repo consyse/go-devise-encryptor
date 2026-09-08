@@ -69,9 +69,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # staticcheck is a tool, not a consumer of this module, and its own
+      # release needs a newer Go than the 1.24 go.mod targets.
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: stable
 
       - uses: dominikh/staticcheck-action@v1
         with:
