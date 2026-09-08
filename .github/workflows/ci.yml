@@ -19,13 +19,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: ["1.25", "1.26"]
+        go: ["1.24", "1.25", "1.26"]
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
+
+      # Without this, a runner older than go.mod's directive silently
+      # downloads a newer toolchain and every matrix leg tests the same one.
+      - name: Pin the toolchain to the runner
+        run: echo "GOTOOLCHAIN=local" >> "$GITHUB_ENV"
 
       # Ruby + bcrypt are what make the cross-language tests run instead of skip.
       - uses: ruby/setup-ruby@v1
@@ -36,7 +41,7 @@ jobs:
         run: gem install bcrypt
 
       - name: gofmt
-        if: matrix.go == '1.26'
+        if: matrix.go == '1.24'
         run: |
           unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then
@@ -47,7 +52,7 @@ jobs:
           fi
 
       - name: go vet
-        if: matrix.go == '1.26'
+        if: matrix.go == '1.24'
         run: go vet ./...
 
       - name: go test
@@ -58,7 +63,7 @@ jobs:
       # side against fresh Ruby output is what proves we still match Devise.
       # Only one leg regenerates, so the other still tests the committed file.
       - name: Regenerate fixtures and re-test
-        if: matrix.go == '1.26'
+        if: matrix.go == '1.24'
         run: |
           ruby script/generate_fixtures.rb
           go test -run TestCompareAgainstRubyFixtures -v ./...

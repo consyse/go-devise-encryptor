@@ -8,6 +8,16 @@ reasoning and the decisions behind the change.
 
 ## Decisions made
 
+- **2026-09-08 — minimum Go version: 1.24, not 1.26.** Approved by John
+  Bolliger. The original `go 1.26` came from `go mod tidy` picking
+  `x/crypto v0.56.0`, which itself requires 1.26. Nothing in this package
+  needs more than Go 1.24, whose `b.Loop()` the benchmarks use. A `go`
+  directive is a hard minimum for anyone importing the package, so 1.26
+  locked out 1.24 and 1.25 users for no gain. Pinned to
+  `x/crypto v0.48.0`, the newest release that still targets Go 1.24. The
+  CI matrix now sets `GOTOOLCHAIN=local`, without which an older runner
+  silently downloads a newer toolchain and every leg tests the same one.
+
 - **2026-09-08 — cost below 10: return an error.** Approved by John
   Bolliger, after a probe found Go and Ruby disagree on every invalid cost.
   Go silently substitutes 10; Ruby raises at 0 and clamps 1..3 up to 4.

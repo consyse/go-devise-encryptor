@@ -15,6 +15,8 @@ that the behaviour below matches what your Rails app does.
 
 # Installation
 
+Go 1.24 or later.
+
     go get github.com/consyse/go-devise-encryptor
 
 Import
