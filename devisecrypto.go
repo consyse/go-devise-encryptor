@@ -8,7 +8,7 @@
 // Where the two libraries handle an input differently, one rule decides:
 // copy Ruby when Ruby has a definite behaviour, refuse when the two would
 // silently do different things. peppered applies the first half, and
-// ErrStretchesOutOfRange the second.
+// ErrStretchesOutOfRange and ErrNullByte the second.
 package devisecrypto
 
 import (
@@ -38,7 +38,16 @@ const MaxPasswordBytes = 72
 
 // ErrStretchesOutOfRange reports a cost Digest will not use. Compare never
 // returns it, because verifying an old low-cost hash must keep working.
+//
+// Digest wraps this error with the received cost (using %w). Callers should
+// check for this error using errors.Is(err, ErrStretchesOutOfRange) rather than
+// direct equality.
 var ErrStretchesOutOfRange = fmt.Errorf("devisecrypto: stretches must be between %d and %d", MinStretches, MaxStretches)
+
+// ErrNullByte reports a password or pepper containing a null byte (0x00).
+// Ruby's bcrypt gem refuses null bytes with ArgumentError, so we reject them
+// rather than silently produce or verify credentials Devise cannot handle.
+var ErrNullByte = errors.New("devisecrypto: password or pepper contains null byte")
 
 // peppered builds the bcrypt input the way Devise::Encryptor.digest does.
 //
@@ -51,15 +60,21 @@ var ErrStretchesOutOfRange = fmt.Errorf("devisecrypto: stretches must be between
 // lock out users who can log in today. A cut may land mid-rune, but Ruby
 // cuts on the same byte boundary, so the two still agree.
 func peppered(password, pepper string) []byte {
-	if strings.TrimSpace(pepper) != "" {
-		password += pepper
+	usePepper := strings.TrimSpace(pepper) != ""
+	totalLen := len(password)
+	if usePepper {
+		totalLen += len(pepper)
+	}
+	if totalLen > MaxPasswordBytes {
+		totalLen = MaxPasswordBytes
 	}
 
-	if len(password) > MaxPasswordBytes {
-		password = password[:MaxPasswordBytes]
+	buf := make([]byte, totalLen)
+	n := copy(buf, password)
+	if usePepper && n < totalLen {
+		copy(buf[n:], pepper)
 	}
-
-	return []byte(password)
+	return buf
 }
 
 // Digest hashes password at the given cost, appending pepper when it is not
@@ -67,8 +82,12 @@ func peppered(password, pepper string) []byte {
 // DefaultStretches to match Devise. It never returns
 // bcrypt.ErrPasswordTooLong; see peppered.
 // A cost outside MinStretches..MaxStretches is refused, not adjusted; see
-// MinStretches.
+// MinStretches. A password or pepper containing a null byte is refused with
+// ErrNullByte; see ErrNullByte.
 func Digest(password string, stretches int, pepper string) (string, error) {
+	if strings.IndexByte(password, 0) != -1 || strings.IndexByte(pepper, 0) != -1 {
+		return "", ErrNullByte
+	}
 	if stretches < MinStretches || stretches > MaxStretches {
 		return "", fmt.Errorf("%w, got %d", ErrStretchesOutOfRange, stretches)
 	}
@@ -86,6 +105,10 @@ func Digest(password string, stretches int, pepper string) (string, error) {
 // Compare reports whether password with pepper matches hashedPassword. A
 // malformed hash is reported as a non-match; use CompareErr to see why.
 //
+// Parameter order is (password, pepper, hashedPassword). Note that this differs
+// from golang.org/x/crypto/bcrypt (which takes hash first) and Ruby Devise's
+// Devise::Encryptor.compare (which takes hashed_password before password).
+//
 // MinStretches does not apply here. Any hash bcrypt can parse still
 // verifies, including one an old Rails app wrote below the floor.
 func Compare(password string, pepper string, hashedPassword string) bool {
@@ -95,12 +118,25 @@ func Compare(password string, pepper string, hashedPassword string) bool {
 }
 
 // CompareErr is Compare with the failure reason. A wrong password is
-// (false, nil); a hash bcrypt cannot parse is (false, err).
+// (false, nil); a hash bcrypt cannot parse or a null-byte input is (false, err).
+//
+// Parameter order is (password, pepper, hashedPassword).
+//
+// Timing attack / user enumeration note:
+// If hashedPassword is blank (empty or whitespace-only), CompareErr returns
+// immediately ((false, nil)) without performing a bcrypt verification, matching
+// Devise's behavior. Callers requiring protection against timing-based user
+// enumeration when an account or password hash is absent should perform a
+// dummy comparison with a placeholder hash.
 func CompareErr(password string, pepper string, hashedPassword string) (bool, error) {
 	// A blank encrypted_password column is an ordinary Devise state for an
 	// account with no password set, not a corrupt hash, so it is not an error.
-	if hashedPassword == "" {
+	if strings.TrimSpace(hashedPassword) == "" {
 		return false, nil
+	}
+
+	if strings.IndexByte(password, 0) != -1 || strings.IndexByte(pepper, 0) != -1 {
+		return false, ErrNullByte
 	}
 
 	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), peppered(password, pepper))

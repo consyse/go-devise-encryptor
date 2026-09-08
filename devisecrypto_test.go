@@ -282,18 +282,81 @@ func TestCompare(t *testing.T) {
 	}
 }
 
-// TestCompareEmptyHash covers a user row with no password set, which is a
-// normal Devise state rather than a corrupt hash.
-func TestCompareEmptyHash(t *testing.T) {
+// TestCompareBlankHash covers a user row with no password set, or a blank
+// hash string (e.g. whitespace), matching Rails Devise's hashed_password.blank?
+// guard. A blank hash is an ordinary Devise state, not a corrupt hash, so it
+// must never match and must not be reported as an error.
+func TestCompareBlankHash(t *testing.T) {
 	t.Parallel()
 
-	ok, err := CompareErr("changeme", "a bad pepper", "")
-	if ok {
-		t.Error("an empty hash must never match")
+	for _, hash := range []string{"", " ", "   ", "\t", "\n", " \t\r\n "} {
+		t.Run(strconv.Quote(hash), func(t *testing.T) {
+			ok, err := CompareErr("changeme", "a bad pepper", hash)
+			if ok {
+				t.Error("a blank hash must never match")
+			}
+			if err != nil {
+				t.Errorf("a blank hash is not an error, got %v", err)
+			}
+			if Compare("changeme", "a bad pepper", hash) {
+				t.Error("Compare must return false for a blank hash")
+			}
+		})
 	}
-	if err != nil {
-		t.Errorf("an empty hash is not an error, got %v", err)
+}
+
+// TestNullByteRejected verifies that passwords or peppers containing null
+// bytes are rejected with ErrNullByte. Ruby's bcrypt gem raises ArgumentError
+// on null bytes, so we refuse them to avoid producing or verifying credentials
+// Devise cannot handle.
+func TestNullByteRejected(t *testing.T) {
+	t.Parallel()
+
+	dummyHash := cheapHash(t, []byte("password"))
+
+	cases := []struct {
+		name     string
+		password string
+		pepper   string
+	}{
+		{"null in password prefix", "\x00changeme", "pepper"},
+		{"null in password middle", "change\x00me", "pepper"},
+		{"null in password suffix", "changeme\x00", "pepper"},
+		{"null in pepper prefix", "changeme", "\x00pepper"},
+		{"null in pepper middle", "changeme", "pep\x00per"},
+		{"null in pepper suffix", "changeme", "pepper\x00"},
+		{"null alone", "\x00", ""},
+		{"null alone in pepper", "", "\x00"},
 	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := Digest(c.password, testCost, c.pepper)
+			if !errors.Is(err, ErrNullByte) {
+				t.Errorf("Digest(%q, %q) err = %v, want ErrNullByte", c.password, c.pepper, err)
+			}
+
+			ok, err := CompareErr(c.password, c.pepper, dummyHash)
+			if ok {
+				t.Errorf("CompareErr(%q, %q) matched unexpectedly", c.password, c.pepper)
+			}
+			if !errors.Is(err, ErrNullByte) {
+				t.Errorf("CompareErr(%q, %q) err = %v, want ErrNullByte", c.password, c.pepper, err)
+			}
+
+			if Compare(c.password, c.pepper, dummyHash) {
+				t.Errorf("Compare(%q, %q) returned true, want false", c.password, c.pepper)
+			}
+		})
+	}
+
+	t.Run("blank hash takes precedence over null check in CompareErr", func(t *testing.T) {
+		// Devise returns false if hashed_password.blank? before inspecting secret.
+		ok, err := CompareErr("foo\x00bar", "pepper", "")
+		if ok || err != nil {
+			t.Errorf("CompareErr with blank hash and null password should be (false, nil), got (%v, %v)", ok, err)
+		}
+	})
 }
 
 func TestCompareErrMalformedHash(t *testing.T) {
@@ -432,6 +495,18 @@ func FuzzDigestCompare(f *testing.F) {
 			t.Fatalf("bcrypt refused peppered output for password %q pepper %q: %v", password, pepper, err)
 		}
 
+		// A null byte in password or pepper is refused by Digest and CompareErr.
+		if strings.IndexByte(password, 0) != -1 || strings.IndexByte(pepper, 0) != -1 {
+			if _, err := Digest(password, MinStretches, pepper); !errors.Is(err, ErrNullByte) {
+				t.Fatalf("Digest(%q, %q) err = %v, want ErrNullByte", password, pepper, err)
+			}
+			ok, err := CompareErr(password, pepper, string(hash))
+			if ok || !errors.Is(err, ErrNullByte) {
+				t.Fatalf("CompareErr(%q, %q) err = %v, want ErrNullByte", password, pepper, err)
+			}
+			return
+		}
+
 		// Compare must rebuild the identical input from the same arguments.
 		ok, err := CompareErr(password, pepper, string(hash))
 		if err != nil {
@@ -439,6 +514,50 @@ func FuzzDigestCompare(f *testing.F) {
 		}
 		if !ok {
 			t.Errorf("round trip failed for password %q pepper %q", password, pepper)
+		}
+	})
+}
+
+// FuzzCompareErr exercises Compare and CompareErr with arbitrary password,
+// pepper, and hashedPassword strings to ensure malformed, corrupted, or
+// hostile hash inputs never trigger panics or unexpected errors.
+func FuzzCompareErr(f *testing.F) {
+	f.Add("changeme", "a bad pepper", "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy")
+	f.Add("", "", "")
+	f.Add("password", "", "not-a-valid-bcrypt-hash")
+	f.Add("password", "pepper", "$2a$00$invalidcoststringthatislongenough")
+	f.Add("password\x00extra", "pepper", "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy")
+	f.Add("password", "pepper\x00extra", "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy")
+	f.Add("changeme", "pepper", "   ")
+	f.Add(strings.Repeat("a", 100), strings.Repeat("b", 100), strings.Repeat("c", 100))
+
+	f.Fuzz(func(t *testing.T, password, pepper, hashedPassword string) {
+		// Compare and CompareErr must never panic on arbitrary input.
+		okErr, err := CompareErr(password, pepper, hashedPassword)
+		ok := Compare(password, pepper, hashedPassword)
+
+		if ok != okErr {
+			t.Fatalf("Compare (%v) != CompareErr boolean (%v) for hash %q", ok, okErr, hashedPassword)
+		}
+
+		if strings.TrimSpace(hashedPassword) == "" {
+			if err != nil {
+				t.Fatalf("expected nil error on blank hash, got %v", err)
+			}
+			if ok {
+				t.Fatalf("Compare must return false on blank hash")
+			}
+			return
+		}
+
+		if strings.IndexByte(password, 0) != -1 || strings.IndexByte(pepper, 0) != -1 {
+			if !errors.Is(err, ErrNullByte) {
+				t.Fatalf("expected ErrNullByte, got %v", err)
+			}
+			if ok {
+				t.Fatalf("Compare must return false on null byte input")
+			}
+			return
 		}
 	})
 }

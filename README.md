@@ -38,8 +38,11 @@ const MaxPasswordBytes = 72
 const MinStretches = 10
 const MaxStretches = 31
 
-// Returned by Digest for a cost outside that range.
-var ErrStretchesOutOfRange = errors.New(...)
+// Returned by Digest for a cost outside that range (wrapped; check with errors.Is).
+var ErrStretchesOutOfRange = fmt.Errorf(...)
+
+// Returned by Digest and CompareErr when password or pepper contains a null byte.
+var ErrNullByte = errors.New(...)
 
 func Digest(password string, stretches int, pepper string) (string, error)
 func Compare(password, pepper, hashedPassword string) bool
@@ -47,12 +50,16 @@ func CompareErr(password, pepper, hashedPassword string) (bool, error)
 ```
 
 - `Digest` builds a Devise-compatible hash. `stretches` is the bcrypt
-  cost, and must be between `MinStretches` and `MaxStretches`.
+  cost, and must be between `MinStretches` and `MaxStretches`. Passwords
+  or peppers containing null bytes return `ErrNullByte`.
 - `Compare` reports whether the password matches the hash. It returns
-  only true or false.
+  only true or false. Note the parameter order: `(password, pepper, hashedPassword)`,
+  which differs from Go's `bcrypt.CompareHashAndPassword(hash, password)` and
+  Devise's internal `Devise::Encryptor.compare(klass, hashed_password, password)`.
 - `CompareErr` does the same work but also returns why it failed. A wrong
-  password is `(false, nil)`. An unparseable hash is `(false, err)`. Use
-  it to tell a wrong password apart from a corrupt row in the database.
+  password is `(false, nil)`. An unparseable hash or null-byte input is
+  `(false, err)`. A blank hash (empty or whitespace) returns `(false, nil)`.
+  Use it to tell a wrong password apart from a corrupt row in the database.
 
 # Usage
 
@@ -99,6 +106,10 @@ will not match.
 
 `Digest` returns `ErrStretchesOutOfRange` when `stretches` is below 10 or
 above 31. It never adjusts the cost for you.
+
+Because `Digest` wraps `ErrStretchesOutOfRange` with the received cost (using `%w`),
+callers should test for it using `errors.Is(err, devisecrypto.ErrStretchesOutOfRange)`
+rather than direct equality `==`.
 
 That is a deliberate choice. It follows the same rule as the truncation
 described below: copy Ruby where Ruby has a definite behaviour, refuse
@@ -153,12 +164,41 @@ If you want to reject long passwords, check the length yourself before
 you call `Digest`. `MaxPasswordBytes` is exported for that.
 
 # Whitespace peppers
-
+ 
 Devise checks the pepper with `pepper.present?`. A pepper of `"   "` is
 blank to Ruby, so Devise hashes the password on its own.
 
 This package does the same. A whitespace-only pepper is treated as no
 pepper at all.
+
+# Null bytes: we reject them
+
+Ruby's `bcrypt` gem refuses any secret with a null byte (`\0` / `0x00`),
+raising `ArgumentError: string contains null byte`. Go's bcrypt silently
+processes them.
+
+Allowing a null byte in Go would write hashes into the database that Rails
+crashes on when the user tries to authenticate. So `Digest` and
+`CompareErr` return `ErrNullByte` instead.
+
+# Blank hashes: matching Devise
+
+Devise guards against unconfigured passwords with
+`return false if hashed_password.blank?`. In Rails, `.blank?` matches
+empty strings (`""`) as well as whitespace-only strings (`"   "`).
+
+`Compare` and `CompareErr` treat any blank hash as a non-match
+(`false, nil`), not as an unparseable hash error.
+
+# Timing attacks and user enumeration
+
+Like Devise, `Compare` and `CompareErr` return immediately (`false, nil`) when
+`hashedPassword` is blank, avoiding an unnecessary bcrypt computation.
+
+However, because computing bcrypt takes noticeable time (~100ms or more depending on stretches),
+returning immediately for missing accounts or blank hashes allows timing-based account
+enumeration. Callers requiring protection against user enumeration should perform a dummy
+bcrypt comparison against a placeholder hash when an account does not exist.
 
 # Running the tests
 
